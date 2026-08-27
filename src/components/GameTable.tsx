@@ -165,6 +165,9 @@ export const GameTable: React.FC<GameTableProps> = ({
   const [depositGraceSecondsLeft, setDepositGraceSecondsLeft] = useState<number>(300);
   const [isGraceAlertDismissed, setIsGraceAlertDismissed] = useState<boolean>(false);
 
+  // 4-Second Auto-Restart Next Round Countdown
+  const [nextRoundCountdown, setNextRoundCountdown] = useState<number>(4);
+
   // Speech bubbles
   const [playerBubbles, setPlayerBubbles] = useState<{ [playerId: string]: { text: string; id: string } }>({});
   const bubbleTimersRef = useRef<{ [playerId: string]: NodeJS.Timeout }>({});
@@ -383,6 +386,10 @@ export const GameTable: React.FC<GameTableProps> = ({
             actDesc = `🏆 Əli qazandı! (+${(action.amount || roomData.pot || 0).toFixed(2)} ₼)`;
           } else if (action.type === 'deal') {
             actDesc = 'Yeni əl başladı. Kartlar paylandı';
+          } else if (action.type === 'leave') {
+            actDesc = `${actName} masanı tərk etdi. Yer boşaldı`;
+          } else if (action.type === 'kick') {
+            actDesc = `${actName} admin tərəfindən masadan çıxarıldı`;
           }
 
           addGameEvent({
@@ -414,6 +421,8 @@ export const GameTable: React.FC<GameTableProps> = ({
               }
             } else if (action.type === 'showdown') {
               soundManager.playWin();
+            } else if (action.type === 'leave' || action.type === 'kick') {
+              soundManager.playPing();
             }
 
             if (action.text) {
@@ -949,7 +958,7 @@ export const GameTable: React.FC<GameTableProps> = ({
         if (prev <= 1) {
           soundManager.playFold();
           handlePlayerAction('fold', 0);
-          setStatusMessage('5 dəqiqəlik depozit vaxtı bitdiyi üçün əliniz avtomatik pasa atıldı.');
+          setStatusMessage('5 dəqiqəlik depozit vaxtı bitdiyi üçün əliniz avtomatik pasa atıldı və bank masada qalan oyunçuya keçdi.');
           return 300;
         }
         if (prev % 60 === 0 || (prev <= 10 && prev > 0)) {
@@ -961,6 +970,46 @@ export const GameTable: React.FC<GameTableProps> = ({
 
     return () => clearInterval(graceTimer);
   }, [isDepositGraceActive, gameStatus, handlePlayerAction]);
+
+  // 4-Second Automatic Next Hand Trigger after Showdown / Round End
+  useEffect(() => {
+    if (gameStatus !== 'round_end') {
+      setNextRoundCountdown(4);
+      return;
+    }
+
+    setNextRoundCountdown(4);
+    const countdownTimer = setInterval(() => {
+      setNextRoundCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(countdownTimer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    // Guaranteed 4-second auto-restart for all players
+    const autoRestartTimeout = setTimeout(() => {
+      if (rawRoomPlayersRef.current.length >= 2) {
+        if (rawRoomPlayersRef.current[0]?.id === user.id) {
+          startNewMultiplayerRoundRef.current?.();
+        } else {
+          // Backup fallback trigger after 4.2s for secondary seated player
+          setTimeout(() => {
+            if (!isStartingRoundRef.current) {
+              startNewMultiplayerRoundRef.current?.();
+            }
+          }, 300);
+        }
+      }
+    }, 4000);
+
+    return () => {
+      clearInterval(countdownTimer);
+      clearTimeout(autoRestartTimeout);
+    };
+  }, [gameStatus, user.id]);
 
   // Target position offsets for 4 seats
   const seatPositions = [
@@ -1065,8 +1114,13 @@ export const GameTable: React.FC<GameTableProps> = ({
         >
           {/* Exit Button */}
           <button
-            onClick={() => {
+            onClick={async () => {
               soundManager.playPing();
+              try {
+                await leaveRoomInFirestore(room.id, user.id);
+              } catch (e) {
+                console.error(e);
+              }
               onLeaveTable();
             }}
             title="Masadan Çıxış"
@@ -1487,7 +1541,7 @@ export const GameTable: React.FC<GameTableProps> = ({
 
               <div className="text-[11px] text-white/50 flex items-center justify-center gap-1.5">
                 <Hourglass className="w-3.5 h-3.5 animate-spin text-[#F59E0B]" />
-                <span>Növbəti paylama 4 saniyəyə başlayır...</span>
+                <span>Növbəti paylama {nextRoundCountdown > 0 ? `${nextRoundCountdown} saniyəyə` : 'indi'} başlayır...</span>
               </div>
             </div>
           </motion.div>

@@ -287,99 +287,135 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
         </div>
 
         {/* Otaqlar Siyahısı (Card Formatında) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-          {filteredRooms.map((room) => {
-            const isFull = room.currentPlayers >= room.maxPlayers;
-            const isWaiting = room.status === 'waiting';
-
-            return (
-              <div
-                key={room.id}
-                className="bg-[#1a1a1a] border border-white/10 hover:border-[#F59E0B]/50 rounded-2xl p-4 shadow-xl flex flex-col justify-between transition group relative overflow-hidden"
+        {filteredRooms.length === 0 ? (
+          <div className="bg-[#141414] border border-white/10 rounded-3xl p-8 sm:p-12 text-center max-w-xl mx-auto my-6 shadow-2xl relative overflow-hidden">
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-12 bg-[#F59E0B]/15 blur-2xl pointer-events-none" />
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-[#F59E0B]/20 to-amber-400/10 border border-[#F59E0B]/30 flex items-center justify-center mx-auto mb-4 text-[#F59E0B]">
+              <span className="text-3xl font-black">♠</span>
+            </div>
+            <h3 className="text-lg font-black text-white mb-2">Hal-hazırda Aktiv Oyun Masası Yoxdur</h3>
+            <p className="text-xs sm:text-sm text-white/50 leading-relaxed mb-6">
+              Boş və ya tərk edilmiş masalar sistem tərəfindən avtomatik ləğv edilir. Siz dərhal yeni masa yaradaraq oyunu başlada bilərsiniz!
+            </p>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+              <button
+                onClick={() => {
+                  soundManager.playPing();
+                  onOpenCreateRoom();
+                }}
+                className="w-full sm:w-auto px-6 py-3 bg-[#F59E0B] hover:bg-[#F59E0B]/90 text-black font-black rounded-xl text-xs uppercase tracking-wider transition shadow-lg shadow-[#F59E0B]/20 active:scale-95 flex items-center justify-center gap-2"
               >
-                {/* Top of Card */}
-                <div>
-                  <div className="flex items-start justify-between gap-2 mb-2.5">
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[#F59E0B] font-black text-sm">♠</span>
-                        <h4 className="font-extrabold text-sm text-white group-hover:text-[#F59E0B] transition">
-                          {room.name}
-                        </h4>
-                      </div>
-                      <span className="text-[11px] text-white/40 font-mono">ID: #{room.id}</span>
-                    </div>
+                <Plus className="w-4 h-4 font-black" />
+                <span>İlk Masanı Siz Yaradın</span>
+              </button>
 
-                    {/* Table Stake Badge */}
-                    <div className="px-2.5 py-1 rounded-xl bg-[#F59E0B]/10 border border-[#F59E0B]/40 text-[#F59E0B] font-black text-xs shrink-0 flex items-center gap-1">
-                      <span>Mərc:</span>
-                      <strong className="text-[#F59E0B] font-mono">{((room && room.stake) || 0).toFixed(2)} ₼</strong>
-                    </div>
-                  </div>
+              <button
+                onClick={() => {
+                  soundManager.playPing();
+                  onRefreshRooms();
+                }}
+                className="w-full sm:w-auto px-4 py-3 bg-[#1e1e1e] hover:bg-[#252525] text-white/70 hover:text-white border border-white/10 font-bold rounded-xl text-xs transition active:scale-95 flex items-center justify-center gap-2"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Yenilə</span>
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            {filteredRooms.map((room) => {
+              const isFull = room.currentPlayers >= room.maxPlayers;
+              const isWaiting = room.status === 'waiting';
 
-                  {/* Badges / Status row */}
-                  <div className="flex items-center gap-2 my-3">
-                    {/* Status Etiketi: Yaşıl "Gözləyir" və ya Qırmızı "Oyunda" */}
-                    <span
-                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1.5 border ${
-                        isWaiting
-                          ? 'bg-green-900/40 border-green-500/40 text-green-400'
-                          : 'bg-red-900/40 border-red-500/40 text-red-400'
-                      }`}
-                    >
-                      <span
-                        className={`w-1.5 h-1.5 rounded-full animate-pulse ${
-                          isWaiting ? 'bg-green-400' : 'bg-red-400'
-                        }`}
-                      />
-                      {isWaiting ? 'Gözləyir' : 'Oyunda'}
-                    </span>
-
-                    {/* Oyunçu Sayı Statusu */}
-                    <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-black/40 border border-white/10 text-white/70 text-xs font-mono font-bold">
-                      <Users className="w-3.5 h-3.5 text-white/50" />
-                      <span>
-                        {room.currentPlayers} / {room.maxPlayers}
-                      </span>
-                    </div>
-
-                    {room.isSekaOnly && (
-                      <span className="px-2 py-0.5 rounded-full bg-purple-900/40 border border-purple-500/30 text-purple-300 text-[10px] font-bold flex items-center gap-1">
-                        <Flame className="w-3 h-3 text-purple-400" /> Seka
-                      </span>
-                    )}
-
-                    {room.isPrivate && (
-                      <span className="px-2 py-0.5 rounded-full bg-blue-900/40 border border-blue-500/30 text-blue-300 text-[10px] font-bold flex items-center gap-1">
-                        <Shield className="w-3 h-3 text-blue-400" /> Qapalı
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Card Action Button: Əgər masa doludursa "İzlə", boş yer varsa "Otur / Qoşul" */}
-                <button
-                  onClick={() => handleJoin(room)}
-                  className={`w-full py-2.5 rounded-xl font-extrabold text-xs uppercase tracking-wider transition flex items-center justify-center gap-1.5 shadow-md active:scale-95 ${
-                    isFull
-                      ? 'bg-white/5 hover:bg-white/10 text-white/70 border border-white/10'
-                      : 'bg-[#F59E0B] hover:bg-[#F59E0B]/90 text-black shadow-[0_0_15px_rgba(245,158,11,0.25)]'
-                  }`}
+              return (
+                <div
+                  key={room.id}
+                  className="bg-[#1a1a1a] border border-white/10 hover:border-[#F59E0B]/50 rounded-2xl p-4 shadow-xl flex flex-col justify-between transition group relative overflow-hidden"
                 >
-                  {isFull ? (
-                    <>
-                      <span>👁️ Masanı İzlə</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>💺 Otur / Qoşul ({((room && room.stake) || 0).toFixed(2)} ₼)</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            );
-          })}
-        </div>
+                  {/* Top of Card */}
+                  <div>
+                    <div className="flex items-start justify-between gap-2 mb-2.5">
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[#F59E0B] font-black text-sm">♠</span>
+                          <h4 className="font-extrabold text-sm text-white group-hover:text-[#F59E0B] transition">
+                            {room.name}
+                          </h4>
+                        </div>
+                        <span className="text-[11px] text-white/40 font-mono">ID: #{room.id}</span>
+                      </div>
+
+                      {/* Table Stake Badge */}
+                      <div className="px-2.5 py-1 rounded-xl bg-[#F59E0B]/10 border border-[#F59E0B]/40 text-[#F59E0B] font-black text-xs shrink-0 flex items-center gap-1">
+                        <span>Mərc:</span>
+                        <strong className="text-[#F59E0B] font-mono">{((room && room.stake) || 0).toFixed(2)} ₼</strong>
+                      </div>
+                    </div>
+
+                    {/* Badges / Status row */}
+                    <div className="flex items-center gap-2 my-3">
+                      {/* Status Etiketi: Yaşıl "Gözləyir" və ya Qırmızı "Oyunda" */}
+                      <span
+                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1.5 border ${
+                          isWaiting
+                            ? 'bg-green-900/40 border-green-500/40 text-green-400'
+                            : 'bg-red-900/40 border-red-500/40 text-red-400'
+                        }`}
+                      >
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full animate-pulse ${
+                            isWaiting ? 'bg-green-400' : 'bg-red-400'
+                          }`}
+                        />
+                        {isWaiting ? 'Gözləyir' : 'Oyunda'}
+                      </span>
+
+                      {/* Oyunçu Sayı Statusu */}
+                      <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-black/40 border border-white/10 text-white/70 text-xs font-mono font-bold">
+                        <Users className="w-3.5 h-3.5 text-white/50" />
+                        <span>
+                          {room.currentPlayers} / {room.maxPlayers}
+                        </span>
+                      </div>
+
+                      {room.isSekaOnly && (
+                        <span className="px-2 py-0.5 rounded-full bg-purple-900/40 border border-purple-500/30 text-purple-300 text-[10px] font-bold flex items-center gap-1">
+                          <Flame className="w-3 h-3 text-purple-400" /> Seka
+                        </span>
+                      )}
+
+                      {room.isPrivate && (
+                        <span className="px-2 py-0.5 rounded-full bg-blue-900/40 border border-blue-500/30 text-blue-300 text-[10px] font-bold flex items-center gap-1">
+                          <Shield className="w-3 h-3 text-blue-400" /> Qapalı
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Card Action Button: Əgər masa doludursa "İzlə", boş yer varsa "Otur / Qoşul" */}
+                  <button
+                    onClick={() => handleJoin(room)}
+                    className={`w-full py-2.5 rounded-xl font-extrabold text-xs uppercase tracking-wider transition flex items-center justify-center gap-1.5 shadow-md active:scale-95 ${
+                      isFull
+                        ? 'bg-white/5 hover:bg-white/10 text-white/70 border border-white/10'
+                        : 'bg-[#F59E0B] hover:bg-[#F59E0B]/90 text-black shadow-[0_0_15px_rgba(245,158,11,0.25)]'
+                    }`}
+                  >
+                    {isFull ? (
+                      <>
+                        <span>👁️ Masanı İzlə</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>💺 Otur / Qoşul ({((room && room.stake) || 0).toFixed(2)} ₼)</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </main>
 
       {/* Aşağı Naviqasiya Paneli (Bottom Nav): Əsas səhifə (Aktiv) | Cüzdan | Bonus | Qaydalar | Hesab */}

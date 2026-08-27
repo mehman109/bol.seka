@@ -30,6 +30,7 @@ import {
   sendPlayerMessageToFirestore,
   deletePlayerMessageInFirestore,
   markPlayerMessageAsRead,
+  cleanUpEmptyAndStaleRoomsInFirestore,
 } from './services/firebaseService';
 
 export default function App() {
@@ -182,65 +183,18 @@ export default function App() {
     await markPlayerMessageAsRead(messageId);
   };
 
-  // Rooms List
-  const [rooms, setRooms] = useState<Room[]>([
-    {
-      id: '611420',
-      name: 'Oyun otağı #611420',
-      stake: 0.20,
-      maxPlayers: 4,
-      currentPlayers: 4,
-      status: 'in_game',
-    },
-    {
-      id: '748291',
-      name: 'Oyun otağı #748291',
-      stake: 0.20,
-      maxPlayers: 4,
-      currentPlayers: 3,
-      status: 'waiting',
-    },
-    {
-      id: '912304',
-      name: 'Oyun otağı #912304',
-      stake: 0.50,
-      maxPlayers: 4,
-      currentPlayers: 2,
-      status: 'waiting',
-    },
-    {
-      id: '104922',
-      name: 'Oyun otağı #104922',
-      stake: 1.00,
-      maxPlayers: 4,
-      currentPlayers: 1,
-      status: 'waiting',
-    },
-    {
-      id: '450831',
-      name: 'Oyun otağı #450831',
-      stake: 2.00,
-      maxPlayers: 4,
-      currentPlayers: 4,
-      status: 'in_game',
-    },
-    {
-      id: '890123',
-      name: 'Oyun otağı #890123',
-      stake: 5.00,
-      maxPlayers: 4,
-      currentPlayers: 2,
-      status: 'waiting',
-      isSekaOnly: true,
-    },
-  ]);
+  // Rooms List - Starts empty; only real active games loaded from Firestore
+  const [rooms, setRooms] = useState<Room[]>([]);
 
   // Selected Room for Table
-  const [activeRoom, setActiveRoom] = useState<Room | null>(rooms[0]);
+  const [activeRoom, setActiveRoom] = useState<Room | null>(null);
   const [activeBalanceMode, setActiveBalanceMode] = useState<BalanceMode>('wallet');
 
-  // Subscribe to real rooms in Firestore
+  // Subscribe to real rooms in Firestore & auto-cleanup empty/stale tables
   useEffect(() => {
+    // Purge any stale or empty test rooms in the database on load
+    cleanUpEmptyAndStaleRoomsInFirestore().catch(() => {});
+
     const unsubRooms = subscribeToRoomsList((firestoreRooms) => {
       if (firestoreRooms && firestoreRooms.length > 0) {
         setRooms(firestoreRooms.map((r: any) => ({
@@ -253,6 +207,8 @@ export default function App() {
           isSekaOnly: !!r.isSekaOnly,
           isPrivate: !!r.isPrivate,
         })));
+      } else {
+        setRooms([]);
       }
     });
     return () => unsubRooms();
@@ -384,6 +340,7 @@ export default function App() {
     maxPlayers: number;
     isSekaOnly: boolean;
     isPrivate: boolean;
+    balanceMode?: BalanceMode;
   }) => {
     const newRoom: Room = {
       id: Math.floor(100000 + Math.random() * 900000).toString(),
@@ -397,7 +354,9 @@ export default function App() {
       creatorId: user.id,
     };
 
-    // Save to Firestore
+    const effectiveCreatorBalance = (roomData.balanceMode === 'bonus') ? (user.bonusBalance || 0) : (user.balance || 0);
+
+    // Save to Firestore with immediate seated player data
     createRoomInFirestore({
       id: newRoom.id,
       name: newRoom.name,
@@ -407,15 +366,19 @@ export default function App() {
       isPrivate: newRoom.isPrivate,
       creatorId: user.id,
       creatorName: user.username,
+      creatorAvatar: user.avatar,
+      creatorBalance: effectiveCreatorBalance,
     }).catch(() => {});
 
     setRooms((prev) => [newRoom, ...prev]);
     setActiveRoom(newRoom);
+    setActiveBalanceMode(roomData.balanceMode || 'wallet');
     setCurrentScreen('table');
   };
 
   const handleRefreshRooms = () => {
-    // Rooms are automatically updated via realtime Firestore listener
+    // Manually trigger cleanup of any abandoned or empty tables
+    cleanUpEmptyAndStaleRoomsInFirestore().catch(() => {});
   };
 
   return (
@@ -550,6 +513,7 @@ export default function App() {
         onClose={() => setIsCreateRoomOpen(false)}
         onCreateRoom={handleCreateRoom}
         userBalance={user.balance}
+        bonusBalance={user.bonusBalance}
       />
     </div>
   );

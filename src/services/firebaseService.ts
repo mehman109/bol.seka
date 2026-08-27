@@ -663,10 +663,16 @@ export const subscribeToRoomsList = (onUpdate: (rooms: any[]) => void) => {
   const roomsCol = collection(db, 'rooms');
   return onSnapshot(roomsCol, (snapshot) => {
     if (!snapshot.empty) {
-      const list = snapshot.docs.map((d) => ({
-        id: d.id,
-        ...d.data(),
-      }));
+      const list = snapshot.docs
+        .map((d) => ({
+          id: d.id,
+          ...d.data(),
+        }))
+        .filter((r: any) => {
+          // Filter out empty or destroyed rooms
+          const playerCount = Array.isArray(r.players) ? r.players.length : (typeof r.currentPlayers === 'number' ? r.currentPlayers : 0);
+          return playerCount > 0;
+        });
       onUpdate(list);
     } else {
       onUpdate([]);
@@ -688,14 +694,34 @@ export const createRoomInFirestore = async (roomData: {
   isPrivate?: boolean;
   creatorId?: string;
   creatorName?: string;
+  creatorAvatar?: string;
+  creatorBalance?: number;
 }) => {
   try {
     const roomRef = doc(db, 'rooms', roomData.id);
+    
+    // Seat the creator automatically on seat 0
+    const initialPlayers = roomData.creatorId ? [{
+      id: roomData.creatorId,
+      username: roomData.creatorName || 'Oyunçu',
+      avatar: roomData.creatorAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80',
+      balance: typeof roomData.creatorBalance === 'number' ? roomData.creatorBalance : 0,
+      seatIndex: 0,
+      isFolded: false,
+      isSeka: false,
+      cardsRevealed: false,
+      currentBet: 0,
+      cards: [],
+      isBot: false,
+      lastActive: Date.now(),
+    }] : [];
+
     const initialData = {
       ...roomData,
-      currentPlayers: 1,
+      currentPlayers: initialPlayers.length,
       status: 'waiting',
-      players: [],
+      players: initialPlayers,
+      activePlayerId: roomData.creatorId || '',
       pot: 0,
       currentBet: roomData.stake,
       roundNumber: 1,
@@ -716,6 +742,9 @@ export const subscribeToRoomDoc = (roomId: string, onUpdate: (roomData: any) => 
   return onSnapshot(roomRef, (snap) => {
     if (snap.exists()) {
       onUpdate(snap.data());
+    } else {
+      // Room was deleted or is no longer present in Firestore
+      onUpdate(null);
     }
   }, (err) => {
     console.error(`Room ${roomId} subscription error:`, err);
@@ -807,17 +836,75 @@ export const leaveRoomInFirestore = async (roomId: string, playerId: string) => 
     const data = snap.data();
     const existingPlayers = (data.players || []).filter((p: any) => p.id !== playerId);
 
+    // If no players remain at all, delete the empty room from Firestore to avoid ghost rooms
+    if (existingPlayers.length === 0) {
+      await deleteDoc(roomRef);
+      return true;
+    }
+
     let newActivePlayerId = data.activePlayerId;
     if (data.activePlayerId === playerId && existingPlayers.length > 0) {
       newActivePlayerId = existingPlayers[0].id;
     }
+
+    const currentPot = typeof data.pot === 'number' ? data.pot : 0;
+    
+    // If a game was active and only 1 player remains, award the entire pot to the remaining player
+    if (currentPot > 0 && existingPlayers.length === 1 && (data.status === 'betting' || data.status === 'showdown' || data.status === 'dealing')) {
+      const soleWinner = existingPlayers[0];
+      const rakeRate = 0.10;
+      const rakeAmount = Math.round(currentPot * rakeRate * 100) / 100;
+      const netPotWon = Math.round((currentPot - rakeAmount) * 100) / 100;
+
+      soleWinner.balance = (soleWinner.balance || 0) + netPotWon;
+      soleWinner.isWinner = true;
+      soleWinner.cardsRevealed = true;
+
+      await setDoc(roomRef, {
+        players: [soleWinner],
+        currentPlayers: 1,
+        activePlayerId: soleWinner.id,
+        pot: currentPot,
+        status: 'round_end',
+        winnerInfo: {
+          winner: soleWinner,
+          potWon: netPotWon,
+          evaluation: { description: 'Rəqib masanı tərk etdi (Texniki Qələbə)' },
+        },
+        statusMessage: `🏆 ${soleWinner.username} masada qalan tək qalib kimi bankı (+${netPotWon.toFixed(2)} ₼) qazandı!`,
+        lastActive: serverTimestamp(),
+        lastAction: {
+          type: 'win',
+          playerId: soleWinner.id,
+          playerName: soleWinner.username,
+          text: `Masanı qazandı (+${netPotWon.toFixed(2)} ₼)`,
+          timestamp: Date.now(),
+        },
+      }, { merge: true });
+
+      // Update sole winner's persistent balance in user profile
+      updateUserBalanceInFirestore(soleWinner.id, netPotWon).catch(() => {});
+
+      return true;
+    }
+
+    const leavingPlayer = (data.players || []).find((p: any) => p.id === playerId);
+    const leavingName = leavingPlayer?.username || 'Oyunçu';
 
     await setDoc(roomRef, {
       players: existingPlayers,
       currentPlayers: existingPlayers.length,
       activePlayerId: newActivePlayerId,
       status: existingPlayers.length >= 2 ? (data.status || 'waiting') : 'waiting',
+      statusMessage: `${leavingName} masanı tərk etdi. Yer boşaldı.`,
       lastActive: serverTimestamp(),
+      lastAction: {
+        type: 'leave',
+        playerId: playerId,
+        playerName: leavingName,
+        text: `${leavingName} masanı tərk etdi`,
+        timestamp: Date.now(),
+      },
     }, { merge: true });
 
     return true;
@@ -837,6 +924,11 @@ export const kickPlayerFromRoomInFirestore = async (roomId: string, playerId: st
     const data = snap.data();
     const existingPlayers = (data.players || []).filter((p: any) => p.id !== playerId);
 
+    if (existingPlayers.length === 0) {
+      await deleteDoc(roomRef);
+      return true;
+    }
+
     let newActivePlayerId = data.activePlayerId;
     if (data.activePlayerId === playerId && existingPlayers.length > 0) {
       newActivePlayerId = existingPlayers[0].id;
@@ -845,6 +937,45 @@ export const kickPlayerFromRoomInFirestore = async (roomId: string, playerId: st
     const kickedList = Array.isArray(data.kickedPlayerIds) ? [...data.kickedPlayerIds] : [];
     if (!kickedList.includes(playerId)) {
       kickedList.push(playerId);
+    }
+
+    const currentPot = typeof data.pot === 'number' ? data.pot : 0;
+
+    // If game was active and 1 player remains, award pot to sole winner
+    if (currentPot > 0 && existingPlayers.length === 1 && (data.status === 'betting' || data.status === 'showdown' || data.status === 'dealing')) {
+      const soleWinner = existingPlayers[0];
+      const rakeRate = 0.10;
+      const rakeAmount = Math.round(currentPot * rakeRate * 100) / 100;
+      const netPotWon = Math.round((currentPot - rakeAmount) * 100) / 100;
+
+      soleWinner.balance = (soleWinner.balance || 0) + netPotWon;
+      soleWinner.isWinner = true;
+      soleWinner.cardsRevealed = true;
+
+      await setDoc(roomRef, {
+        players: [soleWinner],
+        currentPlayers: 1,
+        activePlayerId: soleWinner.id,
+        kickedPlayerIds: kickedList,
+        pot: currentPot,
+        status: 'round_end',
+        winnerInfo: {
+          winner: soleWinner,
+          potWon: netPotWon,
+          evaluation: { description: 'Rəqib admin tərəfindən çıxarıldı (Qələbə)' },
+        },
+        statusMessage: `🏆 ${soleWinner.username} bankı (+${netPotWon.toFixed(2)} ₼) qazandı!`,
+        lastActive: serverTimestamp(),
+        lastAction: {
+          type: 'kick',
+          playerId,
+          text: 'Oyunçu admin tərəfindən otaqdan çıxarıldı',
+          timestamp: Date.now(),
+        },
+      }, { merge: true });
+
+      updateUserBalanceInFirestore(soleWinner.id, netPotWon).catch(() => {});
+      return true;
     }
 
     await setDoc(roomRef, {
@@ -877,6 +1008,39 @@ export const deleteRoomFromFirestore = async (roomId: string) => {
     return true;
   } catch (error) {
     console.error('Error deleting room from Firestore:', error);
+    return false;
+  }
+};
+
+// 27.3 Clean up empty and abandoned rooms automatically from Firestore
+export const cleanUpEmptyAndStaleRoomsInFirestore = async () => {
+  try {
+    const roomsCol = collection(db, 'rooms');
+    const snap = await getDocs(roomsCol);
+    if (snap.empty) return true;
+
+    const batch = writeBatch(db);
+    let countToDelete = 0;
+
+    snap.docs.forEach((docSnap) => {
+      const data = docSnap.data();
+      const players = Array.isArray(data.players) ? data.players : [];
+      const currentPlayers = typeof data.currentPlayers === 'number' ? data.currentPlayers : players.length;
+      
+      // If room has 0 players or no active player list, delete it immediately
+      if (players.length === 0 || currentPlayers <= 0) {
+        batch.delete(docSnap.ref);
+        countToDelete++;
+      }
+    });
+
+    if (countToDelete > 0) {
+      await batch.commit();
+      console.log(`[Cleanup] Deleted ${countToDelete} empty/stale rooms from Firestore`);
+    }
+    return true;
+  } catch (error) {
+    console.error('Error cleaning up empty rooms from Firestore:', error);
     return false;
   }
 };
