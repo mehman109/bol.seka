@@ -1,0 +1,6 @@
+{
+  "name": "Ənənəvi Seka (3 Kart)",
+  "description": "Ənənəvi 3 kart Seka onlayn oyunu — Lobi, otaqlar, dəyirmi masa, real Seka qaydaları və canlı çatlar.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

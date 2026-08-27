@@ -1,0 +1,179 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with balance and game statistics",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "username": { "type": "string" },
+        "avatar": { "type": "string" },
+        "balance": { "type": "number" },
+        "gamesPlayed": { "type": "number" },
+        "gamesWon": { "type": "number" },
+        "biggestPotWon": { "type": "number" },
+        "sekaCount": { "type": "number" },
+        "bonusClaimed": { "type": "boolean" },
+        "lastActive": { "type": "string" }
+      },
+      "required": ["id", "username", "balance"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "User wallet transaction record",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string" },
+        "amount": { "type": "number" },
+        "date": { "type": "string" },
+        "status": { "type": "string" },
+        "method": { "type": "string" }
+      },
+      "required": ["type", "amount"]
+    },
+    "Deposit": {
+      "title": "Deposit",
+      "description": "Deposit request receipt submitted by user",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "username": { "type": "string" },
+        "amount": { "type": "number" },
+        "paymentMethod": { "type": "string" },
+        "receiptName": { "type": "string" },
+        "receiptDataUrl": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["userId", "amount", "status"]
+    },
+    "AdminMessage": {
+      "title": "AdminMessage",
+      "description": "Support and communication messages between user and admin",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "username": { "type": "string" },
+        "text": { "type": "string" },
+        "sender": { "type": "string" },
+        "subject": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["userId", "text", "sender"]
+    },
+    "GameRoom": {
+      "title": "GameRoom",
+      "description": "Realtime multiplayer game table room",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "stake": { "type": "number" },
+        "players": { "type": "array" }
+      },
+      "required": ["id", "stake"]
+    },
+    "TableRake": {
+      "title": "TableRake",
+      "description": "10% commission rake collected from game table pots",
+      "type": "object",
+      "properties": {
+        "roomId": { "type": "string" },
+        "roomName": { "type": "string" },
+        "totalPot": { "type": "number" },
+        "rakeAmount": { "type": "number" },
+        "netPayout": { "type": "number" },
+        "winnerId": { "type": "string" },
+        "winnerName": { "type": "string" },
+        "roundNumber": { "type": "number" },
+        "stake": { "type": "number" },
+        "date": { "type": "string" }
+      },
+      "required": ["roomId", "totalPot", "rakeAmount", "netPayout"]
+    },
+    "RegisteredDevice": {
+      "title": "RegisteredDevice",
+      "description": "Registered device hardware fingerprint and IMEI verification to block duplicate registrations",
+      "type": "object",
+      "properties": {
+        "deviceFingerprint": { "type": "string" },
+        "imei": { "type": "string" },
+        "userId": { "type": "string" },
+        "username": { "type": "string" },
+        "email": { "type": "string" },
+        "registeredAt": { "type": "string" }
+      },
+      "required": ["deviceFingerprint", "userId"]
+    },
+    "PlayerMessage": {
+      "title": "PlayerMessage",
+      "description": "Direct player-to-player communication for proposals, feedback and direct chats",
+      "type": "object",
+      "properties": {
+        "fromUserId": { "type": "string" },
+        "fromUsername": { "type": "string" },
+        "fromAvatar": { "type": "string" },
+        "toUserId": { "type": "string" },
+        "toUsername": { "type": "string" },
+        "text": { "type": "string" },
+        "category": { "type": "string" },
+        "read": { "type": "boolean" },
+        "date": { "type": "string" }
+      },
+      "required": ["fromUserId", "toUserId", "text"]
+    },
+    "ActivityLog": {
+      "title": "ActivityLog",
+      "description": "Comprehensive audit and activity tracking of all player and admin events in the system",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "username": { "type": "string" },
+        "actionType": { "type": "string" },
+        "details": { "type": "string" },
+        "amount": { "type": "number" },
+        "roomId": { "type": "string" },
+        "roomName": { "type": "string" },
+        "date": { "type": "string" }
+      },
+      "required": ["userId", "actionType", "details"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Stores user profiles"
+    },
+    "/users/{userId}/transactions/{txId}": {
+      "schema": "Transaction",
+      "description": "Stores transaction history for a user"
+    },
+    "/deposits/{depositId}": {
+      "schema": "Deposit",
+      "description": "Stores user deposit receipts awaiting review"
+    },
+    "/admin_messages/{msgId}": {
+      "schema": "AdminMessage",
+      "description": "Stores messages between users and admin"
+    },
+    "/rooms/{roomId}": {
+      "schema": "GameRoom",
+      "description": "Stores real-time room sessions"
+    },
+    "/table_rakes/{rakeId}": {
+      "schema": "TableRake",
+      "description": "Stores table rake commissions for admin"
+    },
+    "/registered_devices/{deviceId}": {
+      "schema": "RegisteredDevice",
+      "description": "Stores device and IMEI registration records"
+    },
+    "/player_messages/{msgId}": {
+      "schema": "PlayerMessage",
+      "description": "Stores direct player-to-player messages and proposals"
+    },
+    "/activity_logs/{logId}": {
+      "schema": "ActivityLog",
+      "description": "Stores all system-wide user events and admin audits"
+    }
+  }
+}
